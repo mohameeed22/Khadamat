@@ -4,6 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { LanguageProvider, useLanguage } from './src/context/LanguageContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { RequestProvider } from './src/context/RequestContext';
+import { ArtisanProvider } from './src/context/ArtisanContext';
 import { LoginScreen } from './src/screens/auth/LoginScreen';
 import { OtpVerifyScreen } from './src/screens/auth/OtpVerifyScreen';
 import { RoleSelectScreen } from './src/screens/auth/RoleSelectScreen';
@@ -55,8 +57,12 @@ export default function App() {
   return (
     <LanguageProvider>
       <AuthProvider>
-        <StatusBar style="dark" backgroundColor="#FFFFFF" />
-        <MainNavigator />
+        <ArtisanProvider>
+          <RequestProvider>
+            <StatusBar style="dark" backgroundColor="#FFFFFF" />
+            <MainNavigator />
+          </RequestProvider>
+        </ArtisanProvider>
       </AuthProvider>
     </LanguageProvider>
   );

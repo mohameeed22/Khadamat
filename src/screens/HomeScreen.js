@@ -9,22 +9,53 @@ import {
   TextInput,
   Switch,
   Alert,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { useRequests } from '../context/RequestContext';
 import { LanguageSelector } from '../components/LanguageSelector';
 import { Button } from '../components/Button';
 import { COLORS, SPACING, RADIUS, SHADOWS } from '../constants/theme';
 import { SERVICE_CATEGORIES } from '../constants/translations';
+import { ArtisanDirectoryModal } from './ArtisanDirectoryModal';
+import { PostRequestModal } from './PostRequestModal';
+import { MyRequestsModal } from './MyRequestsModal';
 
 export const HomeScreen = () => {
   const { t, isRTL, language } = useLanguage();
   const { user, logout, selectRole } = useAuth();
+  const { requests, acceptRequest, completeRequest, getRequestsForProvider, addOffer, getRequestsByClient } = useRequests();
+  const [offerInputs, setOfferInputs] = useState({});
+
+  const slotLabel = (slot) =>
+    ({
+      morning: { ar: 'صباح', fr: 'Matin', en: 'Morning' },
+      afternoon: { ar: 'بعد الزوال', fr: 'Après-midi', en: 'Afternoon' },
+      evening: { ar: 'عشية', fr: 'Soir', en: 'Evening' },
+    }[slot]?.[language] || slot);
+
+  const handleSendOffer = async (req) => {
+    const price = parseFloat(offerInputs[req.id]);
+    if (!price || price <= 0) {
+      Alert.alert(isRTL ? 'تنبيه' : 'Attention', isRTL ? 'أدخل سعر صحيح' : 'Entrez un prix valide');
+      return;
+    }
+    await addOffer(req.id, user, price);
+    setOfferInputs((p) => ({ ...p, [req.id]: '' }));
+    Alert.alert(isRTL ? 'تم إرسال عرضك' : 'Offre envoyée', `${price} DT`);
+  };
 
   const isProvider = user?.role === 'provider';
   const [isOnline, setIsOnline] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Modals state
+  const [directoryVisible, setDirectoryVisible] = useState(false);
+  const [directoryCategory, setDirectoryCategory] = useState(null);
+  const [postRequestVisible, setPostRequestVisible] = useState(false);
+  const [myRequestsVisible, setMyRequestsVisible] = useState(false);
 
   const handleRoleToggle = () => {
     const newRole = isProvider ? 'client' : 'provider';
@@ -36,6 +67,82 @@ export const HomeScreen = () => {
     if (language === 'fr') return cat.labelFr;
     return cat.labelEn;
   };
+
+  const openDirectory = (catId = null) => {
+    setDirectoryCategory(catId);
+    setDirectoryVisible(true);
+  };
+
+  const handleCall = (phoneNumber) => {
+    if (!phoneNumber) return;
+    const phoneUrl = `tel:${phoneNumber}`;
+    Linking.canOpenURL(phoneUrl)
+      .then((supported) => {
+        if (supported) {
+          Linking.openURL(phoneUrl);
+        } else {
+          Alert.alert(isRTL ? 'رقم الهاتف' : 'Téléphone', phoneNumber);
+        }
+      })
+      .catch(() => {
+        Alert.alert(isRTL ? 'رقم الهاتف' : 'Téléphone', phoneNumber);
+      });
+  };
+
+  const handleAcceptRequest = (req) => {
+    Alert.alert(
+      isRTL ? 'تأكيد قبول المهمة' : 'Accepter la mission',
+      isRTL
+        ? `هل تريد قبول طلب: "${req.title}" بميزانية ${req.budget} د.ت؟ سيتم تزويدك برقم هاتف الحريف للتنسيق معه.`
+        : `Voulez-vous accepter la mission "${req.title}" (${req.budget} DT) ? Vous pourrez contacter directement le client.`,
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: isRTL ? 'قبول والاتصال' : 'Accepter & Appeler',
+          onPress: async () => {
+            await acceptRequest(req.id, user);
+            Alert.alert(
+              isRTL ? 'تم قبول المهمة بنجاح!' : 'Mission acceptée !',
+              `${isRTL ? 'رقم هاتف الحريف' : 'Téléphone du client'}: ${req.clientPhone}`,
+              [
+                { text: t('close'), style: 'cancel' },
+                {
+                  text: t('callNow'),
+                  onPress: () => handleCall(req.clientPhone),
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  // Open requests available to accept
+  const availableRequests = getRequestsForProvider(
+    user?.profile?.services,
+    user?.profile?.governorate
+  );
+  // Missions accepted by this provider
+  const myAcceptedMissions = requests.filter(
+    (r) => r.status === 'in_progress' && r.assignedProvider?.id === (user?.uid || 'provider_local')
+  );
+
+  const isDemo = !!user?.isDemo;
+  const myRequestCount = getRequestsByClient(user?.phoneNumber || user?.uid).length;
+  const myUid = user?.uid || 'provider_local';
+  const myCompleted = requests.filter(
+    (r) => r.status === 'completed' && r.assignedProvider?.id === myUid
+  );
+  const myReviews = myCompleted.filter((r) => r.review).map((r) => r.review.rating);
+  const stats = isDemo
+    ? { earnings: 85, jobs: 12, rating: 4.9, reviews: 18 }
+    : {
+        earnings: myCompleted.reduce((sum, r) => sum + (parseFloat(r.budget) || 0), 0),
+        jobs: myCompleted.length,
+        rating: myReviews.length ? myReviews.reduce((a, b) => a + b, 0) / myReviews.length : 0,
+        reviews: myReviews.length,
+      };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -64,15 +171,46 @@ export const HomeScreen = () => {
               <Ionicons name="location-sharp" size={12} color={COLORS.primary} />
               <Text style={styles.userGov}>{user?.profile?.governorate || 'Tunisie'}</Text>
               <Text style={styles.dot}>•</Text>
-              <Text style={styles.phoneVerifiedText}>✓ {t('verifiedBadge')}</Text>
+              {user?.isDemo ? (
+                <Text style={styles.phoneVerifiedText}>DEMO</Text>
+              ) : (
+                <Text style={styles.phoneVerifiedText}>✓ {t('verifiedBadge')}</Text>
+              )}
             </View>
           </View>
         </View>
 
-        <View style={styles.topBarRight}>
+        <View style={[styles.topBarRight, isRTL && styles.topBarRightRTL]}>
+          {/* My Requests quick button for Clients */}
+          {!isProvider && (
+            <TouchableOpacity
+              onPress={() => setMyRequestsVisible(true)}
+              style={styles.myRequestsBadgeBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="clipboard-outline" size={18} color={COLORS.primary} />
+              {myRequestCount > 0 && (
+                <View style={styles.counterBadge}>
+                  <Text style={styles.counterBadgeText}>{myRequestCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
           <LanguageSelector compact />
         </View>
       </View>
+
+      {isDemo && (
+        <View style={[styles.demoStrip, isRTL && styles.topBarRTL]}>
+          <Ionicons name="flask" size={14} color={COLORS.secondaryDark} />
+          <Text style={styles.demoStripText} numberOfLines={1}>
+            {isRTL ? 'وضع التجربة: بيانات تجريبية' : 'Mode démo : données fictives'}
+          </Text>
+          <TouchableOpacity onPress={logout} activeOpacity={0.7}>
+            <Text style={styles.demoStripExit}>{isRTL ? 'خروج من التجربة' : 'Quitter la démo'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -145,80 +283,177 @@ export const HomeScreen = () => {
             {/* Provider Stats */}
             <View style={styles.statsRow}>
               <View style={[styles.statCard, SHADOWS.sm]}>
-                <Text style={styles.statNumber}>85 DT</Text>
+                <Text style={styles.statNumber}>{stats.earnings} DT</Text>
                 <Text style={styles.statLabel}>{t('providerEarnings')}</Text>
               </View>
               <View style={[styles.statCard, SHADOWS.sm]}>
-                <Text style={styles.statNumber}>12</Text>
+                <Text style={styles.statNumber}>{stats.jobs}</Text>
                 <Text style={styles.statLabel}>{t('completedJobs')}</Text>
               </View>
               <View style={[styles.statCard, SHADOWS.sm]}>
                 <View style={styles.ratingRow}>
-                  <Text style={styles.statNumber}>4.9</Text>
+                  <Text style={styles.statNumber}>{stats.reviews ? stats.rating.toFixed(1) : '—'}</Text>
                   <Ionicons name="star" size={16} color={COLORS.secondary} />
                 </View>
-                <Text style={styles.statLabel}>18 avis</Text>
+                <Text style={styles.statLabel}>{stats.reviews} {t('reviews')}</Text>
               </View>
             </View>
 
-            {/* Sample Incoming Request */}
+            {/* In-Progress Missions (if any) */}
+            {myAcceptedMissions.length > 0 && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={[styles.sectionTitle, isRTL && styles.textRTL]}>
+                  {isRTL ? 'مهام جارية قيد الإنجاز' : 'Missions en cours'}
+                </Text>
+                {myAcceptedMissions.map((mission) => (
+                  <View key={mission.id} style={[styles.inProgressCard, SHADOWS.sm]}>
+                    <View style={[styles.requestHeader, isRTL && styles.requestHeaderRTL]}>
+                      <View style={styles.inProgressTag}>
+                        <Ionicons name="time" size={12} color="#B45309" />
+                        <Text style={styles.inProgressTagText}>{t('statusInProgress')}</Text>
+                      </View>
+                      <Text style={styles.budgetAmount}>{mission.budget} DT</Text>
+                    </View>
+                    <Text style={[styles.requestTitle, isRTL && styles.textRTL]}>{mission.title}</Text>
+                    <View style={[styles.clientInfoRow, isRTL && styles.clientInfoRowRTL]}>
+                      <Ionicons name="person-outline" size={14} color={COLORS.slate500} />
+                      <Text style={styles.clientNameText}>{mission.clientName}</Text>
+                      <Text style={styles.dot}>•</Text>
+                      <Text style={styles.metaText}>{mission.governorate}</Text>
+                    </View>
+                    <View style={[styles.missionActionRow, isRTL && styles.missionActionRowRTL]}>
+                      <TouchableOpacity
+                        onPress={() => handleCall(mission.clientPhone)}
+                        style={styles.callClientBtn}
+                      >
+                        <Ionicons name="call" size={15} color={COLORS.white} />
+                        <Text style={styles.callClientText}>{t('callNow')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => completeRequest(mission.id)}
+                        style={styles.doneBtn}
+                      >
+                        <Ionicons name="checkmark-circle" size={16} color={COLORS.white} />
+                        <Text style={styles.doneBtnText}>{t('markCompleted')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Available Requests Feed */}
             <Text style={[styles.sectionTitle, isRTL && styles.textRTL]}>
               {isRTL ? 'طلبات خدمة جديدة قريبة منك' : 'Demandes récentes à proximité'}
             </Text>
-            <View style={[styles.requestCard, SHADOWS.sm]}>
-              <View style={[styles.requestHeader, isRTL && styles.requestHeaderRTL]}>
-                <View style={styles.categoryTag}>
-                  <Text style={styles.categoryTagText}>
-                    {isRTL ? 'سباكة' : 'Plomberie'}
-                  </Text>
-                </View>
-                <Text style={styles.timeAgo}>
-                  {isRTL ? 'منذ 10 دقائق' : 'Il y a 10 min'}
+
+            {availableRequests.length === 0 ? (
+              <View style={styles.emptyRequestsBox}>
+                <Ionicons name="checkmark-done-circle-outline" size={40} color={COLORS.slate300} />
+                <Text style={styles.emptyRequestsText}>
+                  {isRTL ? 'لا توجد طلبات جديدة في منطقتك حالياً' : 'Aucune nouvelle demande pour le moment'}
                 </Text>
               </View>
-              <Text style={[styles.requestTitle, isRTL && styles.textRTL]}>
-                {isRTL
-                  ? 'تسريح وتصليح حنفية المطبخ (Ariana)'
-                  : 'Réparation fuite sous évier (Ariana Ville)'}
-              </Text>
-              <View style={[styles.requestMeta, isRTL && styles.requestMetaRTL]}>
-                <View style={styles.metaItem}>
-                  <Ionicons name="location" size={14} color={COLORS.slate500} />
-                  <Text style={styles.metaText}>Ariana Ville (3.2 km)</Text>
-                </View>
-                <View style={styles.metaItem}>
-                  <Ionicons name="cash-outline" size={14} color={COLORS.primary} />
-                  <Text style={[styles.metaText, { color: COLORS.primaryDark, fontWeight: '700' }]}>
-                    40 DT (Cash)
+            ) : (
+              availableRequests.map((req) => (
+                <View key={req.id} style={[styles.requestCard, SHADOWS.sm]}>
+                  <View style={[styles.requestHeader, isRTL && styles.requestHeaderRTL]}>
+                    <View style={styles.categoryTag}>
+                      <Text style={styles.categoryTagText}>{req.category}</Text>
+                    </View>
+                    <Text style={styles.timeAgo}>
+                      {isRTL ? 'طلب جديد' : 'Nouveau'}
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.requestTitle, isRTL && styles.textRTL]}>
+                    {req.title}
                   </Text>
+
+                  {req.description ? (
+                    <Text style={[styles.requestDesc, isRTL && styles.textRTL]} numberOfLines={2}>
+                      {req.description}
+                    </Text>
+                  ) : null}
+
+                  <View style={[styles.requestMeta, isRTL && styles.requestMetaRTL]}>
+                    <View style={styles.metaItem}>
+                      <Ionicons name="location" size={14} color={COLORS.slate500} />
+                      <Text style={styles.metaText}>{req.governorate} {req.city ? `(${req.city})` : ''}</Text>
+                    </View>
+                    <View style={styles.metaItem}>
+                      <Ionicons name="cash-outline" size={14} color={COLORS.primary} />
+                      <Text style={[styles.metaText, { color: COLORS.primaryDark, fontWeight: '700' }]}>
+                        {req.budget} DT (Cash)
+                      </Text>
+                    </View>
+                  </View>
+
+                  {req.schedule && (
+                    <View style={[styles.metaItem, { marginTop: 6 }, isRTL && styles.requestMetaRTL]}>
+                      <Ionicons name="calendar-outline" size={14} color={COLORS.slate500} />
+                      <Text style={styles.metaText}>
+                        {req.schedule.date} · {slotLabel(req.schedule.slot)}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={[styles.offerRow, isRTL && styles.requestMetaRTL]}>
+                    <TextInput
+                      value={offerInputs[req.id] || ''}
+                      onChangeText={(v) => setOfferInputs((p) => ({ ...p, [req.id]: v }))}
+                      keyboardType="numeric"
+                      placeholder={isRTL ? 'سعرك (د.ت)' : 'Votre prix (DT)'}
+                      placeholderTextColor={COLORS.slate400}
+                      style={styles.offerInput}
+                    />
+                    <TouchableOpacity onPress={() => handleSendOffer(req)} style={styles.offerBtn}>
+                      <Ionicons name="pricetag" size={14} color={COLORS.white} />
+                      <Text style={styles.acceptBtnText}>{isRTL ? 'أرسل عرض' : 'Faire une offre'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {(req.offers || []).length > 0 && (
+                    <Text style={[styles.metaText, { marginTop: 6 }]}>
+                      {(req.offers || []).length} {isRTL ? 'عرض' : 'offre(s)'}
+                    </Text>
+                  )}
+
+                  <View style={styles.requestActionRow}>
+                    <TouchableOpacity
+                      onPress={() => handleAcceptRequest(req)}
+                      style={styles.acceptBtn}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="flash" size={16} color={COLORS.white} />
+                      <Text style={styles.acceptBtnText}>{t('acceptAndContact')}</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.requestActionRow}>
-                <TouchableOpacity
-                  onPress={() => Alert.alert(isRTL ? 'تم قبول الطلب بنجاح' : 'Mission acceptée !')}
-                  style={styles.acceptBtn}
-                >
-                  <Text style={styles.acceptBtnText}>
-                    {isRTL ? 'قبول والاتصال بالحريف' : 'Accepter & Contacter'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+              ))
+            )}
           </View>
         ) : (
           /* ----------------- CLIENT VIEW ----------------- */
           <View style={styles.clientSection}>
             {/* Search Input Bar */}
-            <View style={[styles.searchBar, isRTL && styles.searchBarRTL]}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => openDirectory()}
+              style={[styles.searchBar, isRTL && styles.searchBarRTL]}
+            >
               <Ionicons name="search" size={20} color={COLORS.slate400} />
               <TextInput
                 value={searchQuery}
                 onChangeText={setSearchQuery}
+                onSubmitEditing={() => openDirectory()}
                 placeholder={t('searchPlaceholder')}
                 placeholderTextColor={COLORS.slate400}
                 style={[styles.searchInput, isRTL && styles.textRTL]}
               />
-            </View>
+              <TouchableOpacity onPress={() => openDirectory()} style={styles.searchSubmitBtn}>
+                <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
+              </TouchableOpacity>
+            </TouchableOpacity>
 
             {/* Cash on Delivery Guarantee Banner */}
             <View style={[styles.cashBanner, isRTL && styles.cashBannerRTL]}>
@@ -229,23 +464,24 @@ export const HomeScreen = () => {
             </View>
 
             {/* Popular Service Categories */}
-            <Text style={[styles.sectionTitle, isRTL && styles.textRTL]}>
-              {t('popularCategories')}
-            </Text>
+            <View style={[styles.sectionHeaderRow, isRTL && styles.sectionHeaderRowRTL]}>
+              <Text style={[styles.sectionTitle, isRTL && styles.textRTL]}>
+                {t('popularCategories')}
+              </Text>
+              <TouchableOpacity onPress={() => openDirectory()} activeOpacity={0.7}>
+                <Text style={styles.seeAllText}>
+                  {isRTL ? 'عرض الكل' : 'Voir tout'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.categoriesGrid}>
               {SERVICE_CATEGORIES.map((cat) => (
                 <TouchableOpacity
                   key={cat.id}
                   activeOpacity={0.8}
                   style={[styles.categoryCard, SHADOWS.sm]}
-                  onPress={() =>
-                    Alert.alert(
-                      getCategoryLabel(cat),
-                      isRTL
-                        ? 'سيتم عرض قائمة الصنايعية المتاحين في ولايتك قريباً في المرحلة 2'
-                        : 'Liste des artisans disponibles bientôt dans la phase 2'
-                    )
-                  }
+                  onPress={() => openDirectory(cat.id)}
                 >
                   <View style={styles.categoryIconCircle}>
                     <Ionicons name={cat.icon} size={22} color={COLORS.primary} />
@@ -258,9 +494,13 @@ export const HomeScreen = () => {
             </View>
 
             {/* Post a custom request CTA */}
-            <View style={[styles.postRequestCard, SHADOWS.md]}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => setPostRequestVisible(true)}
+              style={[styles.postRequestCard, SHADOWS.md]}
+            >
               <View style={styles.postRequestIcon}>
-                <Ionicons name="add-circle" size={32} color={COLORS.primary} />
+                <Ionicons name="add-circle" size={36} color={COLORS.primary} />
               </View>
               <View style={styles.postRequestTextCol}>
                 <Text style={[styles.postRequestTitle, isRTL && styles.textRTL]}>
@@ -272,7 +512,31 @@ export const HomeScreen = () => {
                     : 'Publiez votre besoin et recevez des devis'}
                 </Text>
               </View>
-            </View>
+              <Ionicons
+                name={isRTL ? 'chevron-back' : 'chevron-forward'}
+                size={20}
+                color={COLORS.slate400}
+              />
+            </TouchableOpacity>
+
+            {/* Directory Shortcut Banner */}
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={() => openDirectory()}
+              style={[styles.directoryBanner, SHADOWS.sm]}
+            >
+              <View style={styles.directoryBannerIcon}>
+                <Ionicons name="people" size={24} color={COLORS.secondaryDark} />
+              </View>
+              <View style={{ flex: 1, marginHorizontal: 12 }}>
+                <Text style={[styles.directoryBannerTitle, isRTL && styles.textRTL]}>
+                  {t('artisanDirectory')}
+                </Text>
+                <Text style={[styles.directoryBannerSub, isRTL && styles.textRTL]}>
+                  {isRTL ? 'تصفح قائمة الحرفيين حسب الولاية واتصل مباشرة' : 'Consultez les artisans par gouvernorat'}
+                </Text>
+              </View>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -282,6 +546,28 @@ export const HomeScreen = () => {
           <Text style={styles.logoutText}>{t('logout')}</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Artisan Directory Modal */}
+      <ArtisanDirectoryModal
+        visible={directoryVisible}
+        initialCategory={directoryCategory}
+        initialSearchQuery={searchQuery}
+        onClose={() => setDirectoryVisible(false)}
+      />
+
+      {/* Post Service Request Modal */}
+      <PostRequestModal
+        visible={postRequestVisible}
+        onClose={() => setPostRequestVisible(false)}
+        onSuccess={() => setMyRequestsVisible(true)}
+      />
+
+      {/* My Requests Modal */}
+      <MyRequestsModal
+        visible={myRequestsVisible}
+        onClose={() => setMyRequestsVisible(false)}
+        onNewRequestPress={() => setPostRequestVisible(true)}
+      />
     </SafeAreaView>
   );
 };
@@ -360,7 +646,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginLeft: 8,
+  },
+  topBarRightRTL: {
+    flexDirection: 'row-reverse',
+    marginRight: 8,
+    marginLeft: 0,
+  },
+  myRequestsBadgeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primaryMuted,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  counterBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: COLORS.primary,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  counterBadgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: '900',
   },
   scrollContent: {
     padding: SPACING.md,
@@ -484,6 +803,90 @@ const styles = StyleSheet.create({
     gap: 4,
   },
 
+  // In-Progress Missions Card
+  inProgressCard: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: RADIUS.lg,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    marginBottom: 12,
+  },
+  inProgressTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+    gap: 4,
+  },
+  inProgressTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  budgetAmount: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: COLORS.primaryDark,
+  },
+  clientInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginVertical: 6,
+  },
+  clientInfoRowRTL: {
+    flexDirection: 'row-reverse',
+  },
+  clientNameText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.slate800,
+  },
+  missionActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#FDE68A',
+    paddingTop: 10,
+  },
+  missionActionRowRTL: {
+    flexDirection: 'row-reverse',
+  },
+  callClientBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    paddingVertical: 9,
+    borderRadius: RADIUS.md,
+    gap: 6,
+  },
+  callClientText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  doneBtn: {
+    flex: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.success,
+    paddingVertical: 9,
+    borderRadius: RADIUS.md,
+    gap: 6,
+  },
+  doneBtnText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
   // Request Card
   requestCard: {
     backgroundColor: COLORS.white,
@@ -492,6 +895,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.slate200,
     marginTop: SPACING.xs,
+    marginBottom: 10,
   },
   requestHeader: {
     flexDirection: 'row',
@@ -521,6 +925,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: COLORS.slate900,
+    marginBottom: 6,
+  },
+  requestDesc: {
+    fontSize: 12,
+    color: COLORS.slate600,
+    lineHeight: 16,
     marginBottom: 8,
   },
   requestMeta: {
@@ -547,15 +957,32 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   acceptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.primary,
     paddingVertical: 10,
     borderRadius: RADIUS.md,
-    alignItems: 'center',
+    gap: 6,
   },
   acceptBtnText: {
     color: COLORS.white,
     fontSize: 14,
     fontWeight: '700',
+  },
+  emptyRequestsBox: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.slate200,
+  },
+  emptyRequestsText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: COLORS.slate500,
+    fontWeight: '600',
   },
 
   // Client View
@@ -582,6 +1009,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.slate900,
   },
+  searchSubmitBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   cashBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -601,11 +1036,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 16,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  sectionHeaderRowRTL: {
+    flexDirection: 'row-reverse',
+  },
   sectionTitle: {
     fontSize: 17,
     fontWeight: '800',
     color: COLORS.slate900,
-    marginBottom: SPACING.sm,
+  },
+  seeAllText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   categoriesGrid: {
     flexDirection: 'row',
@@ -648,12 +1096,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLORS.primaryLight,
     gap: 12,
+    marginBottom: 12,
   },
   postRequestIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primaryMuted,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -661,29 +1106,104 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   postRequestTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: COLORS.slate900,
     marginBottom: 2,
   },
   postRequestSub: {
     fontSize: 12,
-    color: COLORS.slate600,
+    color: COLORS.slate500,
+  },
+  directoryBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    marginBottom: 12,
+  },
+  directoryBannerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FDE68A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  directoryBannerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#78350F',
+  },
+  directoryBannerSub: {
+    fontSize: 11,
+    color: '#92400E',
+    marginTop: 2,
   },
 
+  offerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  offerInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.slate200,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: COLORS.slate900,
+    backgroundColor: COLORS.slate50,
+  },
+  offerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.secondaryDark,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: RADIUS.md,
+  },
+  demoStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.warningLight,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.secondaryLight,
+  },
+  demoStripText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.secondaryDark,
+  },
+  demoStripExit: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.danger,
+  },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
-    marginTop: SPACING.md,
-    marginBottom: SPACING.xxl,
-    gap: 6,
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 40,
   },
   logoutText: {
-    color: COLORS.danger,
     fontSize: 14,
     fontWeight: '700',
+    color: COLORS.danger,
   },
   textRTL: {
     textAlign: 'right',
