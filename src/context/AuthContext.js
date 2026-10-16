@@ -97,6 +97,7 @@ export const AuthProvider = ({ children }) => {
         uid: firebaseUser.uid,
         phoneNumber: pendingVerification.phoneNumber,
         phoneNumberVerified: true,
+        isDemo: false,
         role: null,       // Will be set in RoleSelectScreen
         profile: null,    // Will be set in ProfileSetupScreen
         createdAt: new Date().toISOString(),
@@ -143,6 +144,7 @@ export const AuthProvider = ({ children }) => {
       uid: `demo_user_${Date.now()}`,
       phoneNumber: '+216 20 123 456',
       phoneNumberVerified: true,
+      isDemo: true,
       role: role,
       profile: {
         fullName: role === 'client' ? 'أحمد التونسي (Ahmed)' : 'الأسعد النجار (Lassaad)',
