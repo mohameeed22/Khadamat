@@ -1,15 +1,18 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Khadamat - خدمات",
+    "slug": "khadamat",
+    "scheme": "khadamat",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.khadamat.app"
     },
     "android": {
+      "package": "com.khadamat.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -19,6 +22,21 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Khadamat needs access to your photos so you can attach pictures of the problem.",
+          "cameraPermission": "Khadamat needs the camera so you can photograph the problem."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Khadamat uses your location so professionals can find your address."
+        }
+      ]
+    ]
   }
 }
