@@ -17,6 +17,8 @@ import { useRequests } from '../context/RequestContext';
 import { COLORS, RADIUS, SPACING, SHADOWS } from '../constants/theme';
 import { SERVICE_CATEGORIES, GOVERNORATES } from '../constants/translations';
 import { Button } from '../components/Button';
+import { PhotoPicker } from '../components/PhotoPicker';
+import { LocationPicker } from '../components/LocationPicker';
 
 const TIME_SLOTS = [
   { id: 'morning', icon: 'sunny', ar: 'صباح', fr: 'Matin', en: 'Morning' },
@@ -38,6 +40,8 @@ export const PostRequestModal = ({ visible, onClose, onSuccess }) => {
   const [slot, setSlot] = useState('morning');
   const [budget, setBudget] = useState('40');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [photos, setPhotos] = useState([]);
+  const [location, setLocation] = useState(null);
 
   const getDayDate = (offset) => {
     const d = new Date();
@@ -77,6 +81,9 @@ export const PostRequestModal = ({ visible, onClose, onSuccess }) => {
         urgency,
         schedule: { date: getDayDate(day).toISOString().slice(0, 10), slot },
         budget: budget.trim() || '30',
+        photos,
+        location,
+        city: location?.address ? location.address.split(',').slice(-2, -1)[0]?.trim() || '' : '',
         clientName: user?.profile?.fullName || (isRTL ? 'حريف خدمات' : 'Client Khadamat'),
         clientPhone: user?.phoneNumber || user?.uid || '',
       });
@@ -90,6 +97,8 @@ export const PostRequestModal = ({ visible, onClose, onSuccess }) => {
             onPress: () => {
               setTitle('');
               setDescription('');
+              setPhotos([]);
+              setLocation(null);
               if (onSuccess) onSuccess();
               onClose();
             },
@@ -328,6 +337,18 @@ export const PostRequestModal = ({ visible, onClose, onSuccess }) => {
               style={[styles.inputField, styles.textAreaField, isRTL && styles.textRTL]}
             />
           </View>
+
+          {/* 7. Photos of the problem */}
+          <Text style={[styles.fieldLabel, isRTL && styles.textRTL]}>
+            {language === 'ar' ? 'صور المشكل (اختياري)' : language === 'fr' ? 'Photos du problème (optionnel)' : 'Photos of the problem (optional)'}
+          </Text>
+          <PhotoPicker photos={photos} onChange={setPhotos} />
+
+          {/* 8. Location */}
+          <Text style={[styles.fieldLabel, isRTL && styles.textRTL]}>
+            {language === 'ar' ? 'موقع التدخل (اختياري)' : language === 'fr' ? 'Lieu d’intervention (optionnel)' : 'Job location (optional)'}
+          </Text>
+          <LocationPicker value={location} onChange={setLocation} />
 
           {/* Submit Button */}
           <Button

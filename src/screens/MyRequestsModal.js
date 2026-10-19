@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Modal,
   View,
@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   Linking,
   Alert,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../context/LanguageContext';
@@ -16,6 +17,64 @@ import { useAuth } from '../context/AuthContext';
 import { useRequests } from '../context/RequestContext';
 import { COLORS, RADIUS, SPACING, SHADOWS } from '../constants/theme';
 import { SERVICE_CATEGORIES } from '../constants/translations';
+import { PhotoGallery } from '../components/PhotoGallery';
+import { openInMaps, resolveCoords } from '../utils/geo';
+
+/** Star rating + optional comment, shown once a job is completed. */
+const ReviewBox = ({ item, onSubmit, isRTL, language }) => {
+  const L = (ar, fr, en) => (language === 'ar' ? ar : language === 'fr' ? fr : en);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+
+  if (item.review) {
+    return (
+      <View style={styles.reviewBox}>
+        <View style={[styles.reviewRow, isRTL && styles.cardActionsRTL]}>
+          <Text style={styles.reviewLabel}>{L('تقييمك', 'Votre avis', 'Your review')}</Text>
+          <View style={{ flexDirection: 'row', gap: 2 }}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <Ionicons key={n} name={n <= item.review.rating ? 'star' : 'star-outline'} size={20} color={COLORS.secondary} />
+            ))}
+          </View>
+        </View>
+        {!!item.review.comment && (
+          <Text style={[styles.reviewComment, isRTL && styles.textRTL]}>“{item.review.comment}”</Text>
+        )}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.reviewBox}>
+      <View style={[styles.reviewRow, isRTL && styles.cardActionsRTL]}>
+        <Text style={styles.reviewLabel}>{L('قيّم الصنايعي', 'Noter l’artisan', 'Rate the pro')}</Text>
+        <View style={{ flexDirection: 'row', gap: 4 }}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <TouchableOpacity key={n} onPress={() => setRating(n)}>
+              <Ionicons name={n <= rating ? 'star' : 'star-outline'} size={24} color={COLORS.secondary} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+      {rating > 0 && (
+        <>
+          <TextInput
+            value={comment}
+            onChangeText={setComment}
+            multiline
+            placeholder={L('اكتب رأيك (اختياري)', 'Écrivez votre avis (optionnel)', 'Write a comment (optional)')}
+            placeholderTextColor={COLORS.slate400}
+            style={[styles.reviewInput, isRTL && styles.textRTL]}
+          />
+          <TouchableOpacity style={styles.submitReviewBtn} onPress={() => onSubmit(item.id, rating, comment)}>
+            <Ionicons name="send" size={14} color={COLORS.white} />
+            <Text style={styles.completeBtnText}>{L('إرسال التقييم', 'Envoyer l’avis', 'Submit review')}</Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+};
 
 export const MyRequestsModal = ({ visible, onClose, onNewRequestPress }) => {
   const { t, isRTL, language } = useLanguage();
@@ -85,6 +144,21 @@ export const MyRequestsModal = ({ visible, onClose, onNewRequestPress }) => {
             {item.description}
           </Text>
         ) : null}
+
+        {(item.photos || []).length > 0 && <PhotoGallery photos={item.photos} />}
+
+        {(item.location || item.governorate) && (
+          <TouchableOpacity
+            style={[styles.mapBtn, isRTL && styles.cardActionsRTL]}
+            activeOpacity={0.8}
+            onPress={() => openInMaps(resolveCoords(item), item.title)}
+          >
+            <Ionicons name="map" size={14} color={COLORS.primaryDark} />
+            <Text style={styles.mapBtnText} numberOfLines={1}>
+              {item.location?.address || (isRTL ? 'عرض على الخريطة' : language === 'fr' ? 'Voir sur la carte' : 'View on map')}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <View style={[styles.metaRow, isRTL && styles.metaRowRTL]}>
           <View style={styles.metaItem}>
@@ -159,28 +233,9 @@ export const MyRequestsModal = ({ visible, onClose, onNewRequestPress }) => {
           </View>
         )}
 
-        {/* Review: stars for completed jobs */}
+        {/* Review: stars + comment for completed jobs */}
         {item.status === 'completed' && (
-          <View style={[styles.reviewRow, isRTL && styles.cardActionsRTL]}>
-            <Text style={styles.reviewLabel}>
-              {item.review ? (isRTL ? 'تقييمك' : 'Votre avis') : isRTL ? 'قيّم الصنايعي' : 'Noter l’artisan'}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 4 }}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <TouchableOpacity
-                  key={n}
-                  disabled={!!item.review}
-                  onPress={() => reviewRequest(item.id, n)}
-                >
-                  <Ionicons
-                    name={item.review && n <= item.review.rating ? 'star' : 'star-outline'}
-                    size={22}
-                    color={COLORS.secondary}
-                  />
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
+          <ReviewBox item={item} onSubmit={reviewRequest} isRTL={isRTL} language={language} />
         )}
 
         {/* Action Buttons */}
@@ -423,8 +478,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
   },
+  reviewBox: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.slate50,
+    borderWidth: 1,
+    borderColor: COLORS.slate200,
+  },
+  reviewComment: {
+    marginTop: 8,
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: COLORS.slate700,
+    lineHeight: 18,
+  },
+  reviewInput: {
+    marginTop: 10,
+    minHeight: 60,
+    padding: 10,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.slate200,
+    fontSize: 13,
+    color: COLORS.slate900,
+    textAlignVertical: 'top',
+  },
+  submitReviewBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: RADIUS.md,
+  },
+  mapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primaryMuted,
+    maxWidth: '100%',
+  },
+  mapBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.primaryDark, flexShrink: 1 },
   reviewLabel: {
     fontSize: 12,
     fontWeight: '700',

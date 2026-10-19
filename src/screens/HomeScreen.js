@@ -22,6 +22,8 @@ import { SERVICE_CATEGORIES } from '../constants/translations';
 import { ArtisanDirectoryModal } from './ArtisanDirectoryModal';
 import { PostRequestModal } from './PostRequestModal';
 import { MyRequestsModal } from './MyRequestsModal';
+import { PhotoGallery } from '../components/PhotoGallery';
+import { openDirections, openInMaps, resolveCoords, getGovernorateCoords, distanceKm, formatDistance } from '../utils/geo';
 
 export const HomeScreen = () => {
   const { t, isRTL, language } = useLanguage();
@@ -48,6 +50,13 @@ export const HomeScreen = () => {
   };
 
   const isProvider = user?.role === 'provider';
+
+  // Distance from the provider's governorate centre to a request (approximate)
+  const requestDistance = (req) => {
+    const km = distanceKm(getGovernorateCoords(user?.profile?.governorate), resolveCoords(req));
+    return km == null ? '' : `~${formatDistance(km)}`;
+  };
+  const mapLabel = isRTL ? 'الموقع' : language === 'fr' ? 'Itinéraire' : 'Directions';
   const [isOnline, setIsOnline] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -321,6 +330,22 @@ export const HomeScreen = () => {
                       <Text style={styles.dot}>•</Text>
                       <Text style={styles.metaText}>{mission.governorate}</Text>
                     </View>
+                    {(mission.photos || []).length > 0 && <PhotoGallery photos={mission.photos} />}
+                    {!!mission.description && (
+                      <Text style={[styles.requestDesc, isRTL && styles.textRTL]} numberOfLines={3}>
+                        {mission.description}
+                      </Text>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => openDirections(resolveCoords(mission))}
+                      style={[styles.mapChip, isRTL && styles.requestMetaRTL]}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="navigate" size={14} color={COLORS.primaryDark} />
+                      <Text style={styles.mapChipText} numberOfLines={1}>
+                        {mission.location?.address || mapLabel}
+                      </Text>
+                    </TouchableOpacity>
                     <View style={[styles.missionActionRow, isRTL && styles.missionActionRowRTL]}>
                       <TouchableOpacity
                         onPress={() => handleCall(mission.clientPhone)}
@@ -375,6 +400,23 @@ export const HomeScreen = () => {
                       {req.description}
                     </Text>
                   ) : null}
+
+                  {(req.photos || []).length > 0 && <PhotoGallery photos={req.photos} size={72} />}
+
+                  <TouchableOpacity
+                    onPress={() => openInMaps(resolveCoords(req), req.title)}
+                    style={[styles.mapChip, isRTL && styles.requestMetaRTL]}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="map" size={14} color={COLORS.primaryDark} />
+                    <Text style={styles.mapChipText} numberOfLines={1}>
+                      {req.location?.address || (isRTL ? 'عرض على الخريطة' : language === 'fr' ? 'Voir sur la carte' : 'View on map')}
+                      {requestDistance(req) ? `  ·  ${requestDistance(req)}` : ''}
+                    </Text>
+                    {!req.location && (
+                      <Text style={styles.approxText}>{isRTL ? 'تقريبي' : language === 'fr' ? 'approx.' : 'approx.'}</Text>
+                    )}
+                  </TouchableOpacity>
 
                   <View style={[styles.requestMeta, isRTL && styles.requestMetaRTL]}>
                     <View style={styles.metaItem}>
@@ -1207,5 +1249,29 @@ const styles = StyleSheet.create({
   },
   textRTL: {
     textAlign: 'right',
+  },
+  mapChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    marginBottom: 4,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primaryMuted,
+  },
+  mapChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.primaryDark,
+    flexShrink: 1,
+  },
+  approxText: {
+    fontSize: 10,
+    color: COLORS.slate500,
+    fontWeight: '600',
   },
 });
