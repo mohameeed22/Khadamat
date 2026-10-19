@@ -57,12 +57,12 @@ export default function App() {
   return (
     <LanguageProvider>
       <AuthProvider>
-        <ArtisanProvider>
-          <RequestProvider>
+        <RequestProvider>
+          <ArtisanProvider>
             <StatusBar style="dark" backgroundColor="#FFFFFF" />
             <MainNavigator />
-          </RequestProvider>
-        </ArtisanProvider>
+          </ArtisanProvider>
+        </RequestProvider>
       </AuthProvider>
     </LanguageProvider>
   );

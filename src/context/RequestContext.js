@@ -137,7 +137,15 @@ export const RequestProvider = ({ children }) => {
     await persistRequests((prev) =>
       prev.map((req) =>
         req.id === requestId && req.status === 'completed'
-          ? { ...req, review: { rating, comment, createdAt: new Date().toISOString() } }
+          ? {
+              ...req,
+              review: {
+                rating,
+                comment: (comment || '').trim(),
+                author: req.clientName || '',
+                createdAt: new Date().toISOString(),
+              },
+            }
           : req
       )
     );

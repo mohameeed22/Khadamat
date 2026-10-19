@@ -14,6 +14,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../context/LanguageContext';
 import { COLORS, RADIUS, SPACING, SHADOWS } from '../constants/theme';
 import { Button } from '../components/Button';
+import { PhotoGallery } from '../components/PhotoGallery';
+import { openInMaps, openDirections, resolveCoords, staticMapUrl } from '../utils/geo';
+import { Image } from 'react-native';
 
 export const ArtisanDetailModal = ({ visible, artisan, onClose, onBookDirect }) => {
   const { t, isRTL, language } = useLanguage();
@@ -194,6 +197,67 @@ export const ArtisanDetailModal = ({ visible, artisan, onClose, onBookDirect }) 
               </View>
             </View>
           )}
+
+          {/* Location map */}
+          {resolveCoords(artisan) && (
+            <View style={[styles.sectionBox, SHADOWS.sm]}>
+              <Text style={[styles.sectionTitle, isRTL && styles.textRTL]}>
+                {language === 'ar' ? 'الموقع' : language === 'fr' ? 'Zone d’intervention' : 'Service area'}
+              </Text>
+              <TouchableOpacity activeOpacity={0.9} onPress={() => openInMaps(resolveCoords(artisan), artisan.name)}>
+                <Image
+                  source={{ uri: staticMapUrl(resolveCoords(artisan), { zoom: 11, height: 240 }) }}
+                  style={styles.mapImage}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dirBtn, isRTL && { flexDirection: 'row-reverse' }]}
+                onPress={() => openDirections(resolveCoords(artisan))}
+              >
+                <Ionicons name="navigate" size={16} color={COLORS.primaryDark} />
+                <Text style={styles.dirBtnText}>
+                  {artisan.city || artisan.governorate} · {language === 'ar' ? 'اتجاهات' : language === 'fr' ? 'Itinéraire' : 'Directions'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Client reviews */}
+          <View style={[styles.sectionBox, SHADOWS.sm]}>
+            <View style={[styles.reviewsHead, isRTL && { flexDirection: 'row-reverse' }]}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                {language === 'ar' ? 'آراء الحرفاء' : language === 'fr' ? 'Avis des clients' : 'Client reviews'}
+              </Text>
+              {artisan.reviewsCount > 0 && (
+                <View style={styles.ratingRow}>
+                  <Ionicons name="star" size={16} color={COLORS.secondary} />
+                  <Text style={styles.statValue}>{artisan.rating.toFixed(1)}</Text>
+                  <Text style={styles.statLabel}>({artisan.reviewsCount})</Text>
+                </View>
+              )}
+            </View>
+            {(artisan.reviews || []).length === 0 ? (
+              <Text style={[styles.bioText, { marginTop: 8 }, isRTL && styles.textRTL]}>
+                {language === 'ar' ? 'لا توجد آراء بعد' : language === 'fr' ? 'Aucun avis pour le moment' : 'No reviews yet'}
+              </Text>
+            ) : (
+              artisan.reviews.map((r) => (
+                <View key={r.id} style={styles.reviewItem}>
+                  <View style={[styles.reviewTop, isRTL && { flexDirection: 'row-reverse' }]}>
+                    <Text style={styles.reviewAuthor}>{r.author || '—'}</Text>
+                    <View style={{ flexDirection: 'row' }}>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <Ionicons key={n} name={n <= r.rating ? 'star' : 'star-outline'} size={13} color={COLORS.secondary} />
+                      ))}
+                    </View>
+                  </View>
+                  {!!r.comment && <Text style={[styles.reviewText, isRTL && styles.textRTL]}>{r.comment}</Text>}
+                  {!!r.jobTitle && <Text style={styles.reviewJob} numberOfLines={1}>{r.jobTitle}</Text>}
+                  {(r.photos || []).length > 0 && <PhotoGallery photos={r.photos} size={52} />}
+                </View>
+              ))
+            )}
+          </View>
         </ScrollView>
 
         {/* Bottom Sticky Action Bar */}
@@ -443,6 +507,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.slate800,
   },
+  mapImage: {
+    width: '100%',
+    height: 140,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.slate200,
+  },
+  dirBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 10,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primaryMuted,
+  },
+  dirBtnText: { fontSize: 13, fontWeight: '800', color: COLORS.primaryDark },
+  reviewsHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  reviewItem: { paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.slate100, gap: 4 },
+  reviewTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  reviewAuthor: { fontSize: 13, fontWeight: '800', color: COLORS.slate900 },
+  reviewText: { fontSize: 13, color: COLORS.slate700, lineHeight: 19 },
+  reviewJob: { fontSize: 11, color: COLORS.slate500 },
   bottomBar: {
     position: 'absolute',
     bottom: 0,
